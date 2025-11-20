@@ -1,14 +1,490 @@
-<!doctype html>
+<!DOCTYPE html>
 <html>
 <head>
-    <meta charset="UTF-8" />
-    <title>Runner</title>
-    <script src="phaser.js"></script>
-    <script src="terminado.js"></script>
-    <script src="juego.js"></script>
-    <script src="principal.js"></script>
+    <meta charset="UTF-8">
+    <title>Carrera Extrema</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/phaser/2.4.4/phaser.min.js"></script>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background: #000;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            font-family: Arial, sans-serif;
+        }
+    </style>
 </head>
 <body>
-    <div id="bloque_juego"></div>
+    <div id="game-container"></div>
+
+    <script>
+        // Crear la instancia del juego
+        var juego = new Phaser.Game(290, 540, Phaser.AUTO, 'game-container');
+
+        var fondo;
+        var carro;
+        var cursores;
+        var enemigos;
+        var timer;
+
+        var gasolinas;
+        var timerGasolina;
+
+        var puntaje = 0;
+        var vidas = 3;
+        var nivel = 1;
+        var textoPuntaje;
+        var textoVidas;
+        var textoNivel;
+
+        var sonidoFondo;
+        var sonidoColision;
+        var sonidoGasolina;
+
+        var Juego = {
+
+            preload: function () {
+                juego.load.image('bg', 'img/bg.png');
+                juego.load.image('carro', 'img/carro.png');
+                juego.load.image('carroMalo', 'img/carroMalo.png');
+                juego.load.image('gasolina', 'img/gas.png');
+                
+                // Cargar sonidos
+                juego.load.audio('musicaFondo', 'musicajuego.mp3');
+                juego.load.audio('colision', 'carcrash.mp3');
+                juego.load.audio('gasolina', 'fuel.wav');
+            },
+
+            mostrarPopupGanador: function() {
+                this.juegoTerminado = true;
+                this.popupGanador.visible = true;
+            },
+
+            mostrarPopupPerdedor: function() {
+                this.juegoTerminado = true;
+                this.popupPerdedor.visible = true;
+            },
+
+            reiniciarJuego: function() {
+                puntaje = 0;
+                vidas = 3;
+                nivel = 1;
+                this.juegoTerminado = false;
+                
+                // Detener y reiniciar música
+                if (sonidoFondo) {
+                    sonidoFondo.stop();
+                    sonidoFondo.play();
+                }
+                
+                juego.state.restart();
+            },
+
+            cambiarNivel: function() {
+                nivel = 2;
+                textoNivel.text = 'Nivel: ' + nivel;
+                
+                // Aumentar velocidad de enemigos y gasolinas
+                enemigos.forEachAlive(function(enemigo) {
+                    enemigo.body.velocity.y = 300; // Más rápido en nivel 2
+                });
+                
+                gasolinas.forEachAlive(function(gasolina) {
+                    gasolina.body.velocity.y = 300; // Más rápido en nivel 2
+                });
+                
+                // Mostrar mensaje de cambio de nivel
+                var mensajeNivel = juego.add.text(juego.width/2, juego.height/2, '¡NIVEL ' + nivel + '!', {
+                    fontSize: '32px',
+                    fill: '#FFFF00',
+                    fontFamily: 'Arial',
+                    fontWeight: 'bold'
+                });
+                mensajeNivel.anchor.setTo(0.5);
+                
+                // Quitar mensaje después de 2 segundos
+                juego.time.events.add(2000, function() {
+                    mensajeNivel.destroy();
+                });
+            },
+
+            verificarGanador: function() {
+                if (nivel === 2 && puntaje >= 30) {
+                    this.mostrarPopupGanador();
+                }
+            },
+
+            mostrarNombreDesarrollador: function() {
+                // Crear panel para mostrar el nombre
+                var panelNombre = juego.add.graphics(0, 0);
+                panelNombre.beginFill(0x000000, 0.8);
+                panelNombre.drawRect(0, 0, juego.width, juego.height);
+                
+                // Texto con el nombre
+                var textoNombre = juego.add.text(juego.width/2, juego.height/2, 'Arnie Jeampool Adriano Flores\nU22209026', {
+                    fontSize: '20px',
+                    fill: '#FFFFFF',
+                    fontFamily: 'Arial',
+                    fontWeight: 'bold',
+                    align: 'center'
+                });
+                textoNombre.anchor.setTo(0.5);
+                
+                // Hacer que el texto desaparezca después de 2 segundos
+                juego.time.events.add(2000, function() {
+                    panelNombre.destroy();
+                    textoNombre.destroy();
+                });
+            },
+
+            create: function () {
+
+                // Mostrar nombre del desarrollador al inicio
+                this.mostrarNombreDesarrollador();
+
+                // Inicializar sonidos
+                sonidoFondo = juego.add.audio('musicaFondo');
+                sonidoColision = juego.add.audio('colision');
+                sonidoGasolina = juego.add.audio('gasolina');
+                
+                // Reproducir música de fondo en loop (con manejo de autoplay)
+                sonidoFondo.loop = true;
+                // Intentar reproducir, pero puede fallar hasta que el usuario interactúe
+                try {
+                    sonidoFondo.play();
+                } catch (e) {
+                    console.log('El audio requiere interacción del usuario');
+                }
+
+                // Fondo
+                fondo = juego.add.tileSprite(0, 0, 290, 540, 'bg');
+
+                // Carro
+                carro = juego.add.sprite(juego.width/2, 496, 'carro');
+                carro.anchor.setTo(0.5);
+                juego.physics.arcade.enable(carro);
+
+                // Puntaje
+                textoPuntaje = juego.add.text(10, 10, 'Puntaje: 0', { 
+                    fontSize: '18px', 
+                    fill: '#FFFFFF',
+                    fontFamily: 'Arial',
+                    fontWeight: 'bold',
+                    stroke: '#000000',
+                    strokeThickness: 3
+                });
+
+                // Vidas
+                textoVidas = juego.add.text(100, 10, 'Vidas: 3', { 
+                    fontSize: '18px', 
+                    fill: '#FF0000',
+                    fontFamily: 'Arial',
+                    fontWeight: 'bold',
+                    stroke: '#000000',
+                    strokeThickness: 3
+                });
+
+                // Nivel
+                textoNivel = juego.add.text(200, 10, 'Nivel: 1', { 
+                    fontSize: '18px', 
+                    fill: '#00FF00',
+                    fontFamily: 'Arial',
+                    fontWeight: 'bold',
+                    stroke: '#000000',
+                    strokeThickness: 3
+                });
+
+                // Enemigos
+                enemigos = juego.add.group();
+                juego.physics.arcade.enable(enemigos, true);
+                enemigos.enableBody = true;
+                enemigos.createMultiple(20, 'carroMalo');
+                enemigos.setAll('anchor.x', 0.5);
+                enemigos.setAll('anchor.y', 0.5);
+                enemigos.setAll('outOfBoundsKill', true);
+                enemigos.setAll('checkWorldBounds', true);
+
+                // Gasolinas
+                gasolinas = juego.add.group();
+                juego.physics.arcade.enable(gasolinas, true);
+                gasolinas.enableBody = true;
+                gasolinas.createMultiple(20, 'gasolina');
+                gasolinas.setAll('anchor.x', 0.5);
+                gasolinas.setAll('anchor.y', 0.5);
+                gasolinas.setAll('outOfBoundsKill', true);
+                gasolinas.setAll('checkWorldBounds', true);
+
+                // --- POPUP GANADOR ---
+                this.popupGanador = juego.add.group();
+
+                var fondoPopupGanador = juego.add.graphics(0, 0);
+                fondoPopupGanador.beginFill(0x000000, 0.8);
+                fondoPopupGanador.drawRect(0, 0, juego.width, juego.height);
+                this.popupGanador.add(fondoPopupGanador);
+
+                var cuadroGanador = juego.add.graphics(0, 0);
+                cuadroGanador.beginFill(0x006600, 1);
+                cuadroGanador.drawRect(juego.width/2 - 120, juego.height/2 - 80, 240, 160);
+                this.popupGanador.add(cuadroGanador);
+
+                var txtGanador = juego.add.text(
+                    juego.width/2, 
+                    juego.height/2 - 40, 
+                    "¡GANASTE!", 
+                    { fontSize: "24px", fill: "#FFFF00", fontWeight: "bold" }
+                );
+                txtGanador.anchor.setTo(0.5);
+                this.popupGanador.add(txtGanador);
+
+                var txtPuntajeFinalGanador = juego.add.text(
+                    juego.width/2, 
+                    juego.height/2, 
+                    "Puntaje: " + puntaje, 
+                    { fontSize: "18px", fill: "#FFFFFF", fontWeight: "bold" }
+                );
+                txtPuntajeFinalGanador.anchor.setTo(0.5);
+                this.popupGanador.add(txtPuntajeFinalGanador);
+
+                var btnReiniciarGanador = juego.add.text(
+                    juego.width/2, 
+                    juego.height/2 + 40, 
+                    "Jugar Otra Vez", 
+                    { fontSize: "20px", fill: "#00FF00", fontWeight: "bold" }
+                );
+                btnReiniciarGanador.anchor.setTo(0.5);
+                btnReiniciarGanador.inputEnabled = true;
+                btnReiniciarGanador.events.onInputDown.add(this.reiniciarJuego, this);
+                this.popupGanador.add(btnReiniciarGanador);
+
+                this.popupGanador.visible = false;
+
+                // --- POPUP PERDEDOR ---
+                this.popupPerdedor = juego.add.group();
+
+                var fondoPopupPerdedor = juego.add.graphics(0, 0);
+                fondoPopupPerdedor.beginFill(0x000000, 0.8);
+                fondoPopupPerdedor.drawRect(0, 0, juego.width, juego.height);
+                this.popupPerdedor.add(fondoPopupPerdedor);
+
+                var cuadroPerdedor = juego.add.graphics(0, 0);
+                cuadroPerdedor.beginFill(0x660000, 1);
+                cuadroPerdedor.drawRect(juego.width/2 - 120, juego.height/2 - 80, 240, 160);
+                this.popupPerdedor.add(cuadroPerdedor);
+
+                var txtPerdedor = juego.add.text(
+                    juego.width/2, 
+                    juego.height/2 - 40, 
+                    "¡GAME OVER!", 
+                    { fontSize: "24px", fill: "#FFFFFF", fontWeight: "bold" }
+                );
+                txtPerdedor.anchor.setTo(0.5);
+                this.popupPerdedor.add(txtPerdedor);
+
+                var txtIntentalo = juego.add.text(
+                    juego.width/2, 
+                    juego.height/2 - 10, 
+                    "VUELVE A INTENTARLO", 
+                    { fontSize: "16px", fill: "#FFFF00", fontWeight: "bold" }
+                );
+                txtIntentalo.anchor.setTo(0.5);
+                this.popupPerdedor.add(txtIntentalo);
+
+                var txtPuntajeFinalPerdedor = juego.add.text(
+                    juego.width/2, 
+                    juego.height/2 + 20, 
+                    "Puntaje: " + puntaje, 
+                    { fontSize: "18px", fill: "#FFFFFF", fontWeight: "bold" }
+                );
+                txtPuntajeFinalPerdedor.anchor.setTo(0.5);
+                this.popupPerdedor.add(txtPuntajeFinalPerdedor);
+
+                var btnReiniciarPerdedor = juego.add.text(
+                    juego.width/2, 
+                    juego.height/2 + 50, 
+                    "Reiniciar", 
+                    { fontSize: "20px", fill: "#00FF00", fontWeight: "bold" }
+                );
+                btnReiniciarPerdedor.anchor.setTo(0.5);
+                btnReiniciarPerdedor.inputEnabled = true;
+                btnReiniciarPerdedor.events.onInputDown.add(this.reiniciarJuego, this);
+                this.popupPerdedor.add(btnReiniciarPerdedor);
+
+                this.popupPerdedor.visible = false;
+                this.juegoTerminado = false;
+
+                // Timers - ajustados según nivel
+                if (nivel === 1) {
+                    timer = juego.time.events.loop(1500, this.crearCarroMalo, this);
+                    timerGasolina = juego.time.events.loop(2000, this.crearGasolina, this);
+                } else {
+                    timer = juego.time.events.loop(1000, this.crearCarroMalo, this); // Más rápido en nivel 2
+                    timerGasolina = juego.time.events.loop(1500, this.crearGasolina, this); // Más rápido en nivel 2
+                }
+
+                // Controles
+                cursores = juego.input.keyboard.createCursorKeys();
+                
+                // Manejar el audio después de la interacción del usuario
+                juego.input.onDown.add(function() {
+                    if (!sonidoFondo.isPlaying) {
+                        sonidoFondo.play();
+                    }
+                }, this);
+            },
+
+            update: function() {
+
+                if (this.juegoTerminado) return;
+
+                fondo.tilePosition.y += 3;
+
+                if (cursores.right.isDown && carro.position.x < 245) {
+                    carro.position.x += 5;
+                }
+                else if (cursores.left.isDown && carro.position.x > 45) {
+                    carro.position.x -= 5;
+                }
+                
+                // Verificar si sube de nivel (15 puntos para pasar al nivel 2)
+                if (puntaje >= 15 && nivel === 1) {
+                    this.cambiarNivel();
+                }
+                
+                // Verificar si gana el juego (completar nivel 2)
+                this.verificarGanador();
+                
+                juego.physics.arcade.overlap(carro, enemigos, this.colisionEnemigo, null, this);
+                juego.physics.arcade.overlap(carro, gasolinas, this.colisionGasolina, null, this);
+            },
+
+            crearCarroMalo: function() {
+                var posicion = Math.floor(Math.random() * 3) + 1;
+                var enemigo = enemigos.getFirstDead();
+                if (enemigo) {
+                    enemigo.physicsBodyType = Phaser.Physics.ARCADE;
+                    enemigo.reset(posicion * 73, 0);
+                    
+                    // Velocidad según el nivel
+                    if (nivel === 1) {
+                        enemigo.body.velocity.y = 200;
+                    } else {
+                        enemigo.body.velocity.y = 300;
+                    }
+                    
+                    enemigo.anchor.setTo(0.5);
+                }
+            },
+
+            crearGasolina: function() {
+                var posicion = Math.floor(Math.random() * 3) + 1;
+                var gasolina = gasolinas.getFirstDead();
+                if (gasolina) {
+                    gasolina.physicsBodyType = Phaser.Physics.ARCADE;
+                    gasolina.reset(posicion * 73, 0);
+                    
+                    // Velocidad según el nivel
+                    if (nivel === 1) {
+                        gasolina.body.velocity.y = 200;
+                    } else {
+                        gasolina.body.velocity.y = 300;
+                    }
+                    
+                    gasolina.anchor.setTo(0.5);
+                }
+            },
+
+            colisionEnemigo: function(carro, enemigo) {
+                enemigo.kill();
+                vidas -= 1;
+                textoVidas.text = 'Vidas: ' + vidas;
+                
+                // Reproducir sonido de colisión
+                sonidoColision.play();
+                
+                if (vidas <= 0) {
+                    puntaje = Math.max(0, puntaje - 10);
+                    textoPuntaje.text = 'Puntaje: ' + puntaje;
+                    this.mostrarPopupPerdedor();
+                } else {
+                    puntaje = Math.max(0, puntaje - 10);
+                    textoPuntaje.text = 'Puntaje: ' + puntaje;
+                }
+            },
+
+            colisionGasolina: function(carro, gasolina) {
+                gasolina.kill();
+                puntaje += 5;
+                textoPuntaje.text = 'Puntaje: ' + puntaje;
+                
+                // Reproducir sonido de gasolina
+                sonidoGasolina.play();
+            }
+        };
+
+        // Estado para la portada
+        // Estado para la portada
+var Portada = {
+    create: function() {
+        // Fondo de portada
+        var fondoPortada = juego.add.tileSprite(0, 0, 290, 540, 'bg');
+        
+        // Título del juego
+        var titulo = juego.add.text(juego.width/2, 150, 'CARRERA EXTREMA', {
+            fontSize: '28px',
+            fill: '#FF0000',  // Cambiado a rojo
+            fontFamily: 'Arial',
+            fontWeight: 'bold'
+        });
+        titulo.anchor.setTo(0.5);
+        
+        // Nombre del desarrollador - ACTUALIZADO CON TU NOMBRE
+        var desarrollador = juego.add.text(juego.width/2, 200, 'Desarrollado por:\nJESUS AYQUIPA', {
+            fontSize: '18px',
+            fill: '#00FF00',  // Cambiado a verde
+            fontFamily: 'Arial',
+            align: 'center',
+            fontWeight: 'bold'
+        });
+        desarrollador.anchor.setTo(0.5);
+        
+        // Instrucciones
+        var instrucciones = juego.add.text(juego.width/2, 280, 'Usa las flechas ← → para moverte\n\nEvita los autos enemigos\nRecoge la gasolina\n\nConsigue 15 puntos para el nivel 2\n30 puntos para ganar!', {
+            fontSize: '16px',
+            fill: '#FFFF00',  // Cambiado a amarillo
+            fontFamily: 'Arial',
+            align: 'center'
+        });
+        instrucciones.anchor.setTo(0.5);
+        
+        // Botón para iniciar juego
+        var btnIniciar = juego.add.text(juego.width/2, 400, 'INICIAR JUEGO', {
+            fontSize: '24px',
+            fill: '#FF00FF',  // Cambiado a magenta
+            fontFamily: 'Arial',
+            fontWeight: 'bold'
+        });
+        btnIniciar.anchor.setTo(0.5);
+        btnIniciar.inputEnabled = true;
+        btnIniciar.events.onInputDown.add(this.iniciarJuego, this);
+        
+        // Efecto de parpadeo en el botón
+        juego.time.events.loop(500, function() {
+            btnIniciar.alpha = btnIniciar.alpha === 1 ? 0.5 : 1;
+        }, this);
+    },
+    
+    iniciarJuego: function() {
+        juego.state.start('Juego');
+    }
+};
+
+        // Configurar los estados del juego
+        juego.state.add('Portada', Portada);
+        juego.state.add('Juego', Juego);
+        juego.state.start('Portada');
+    </script>
 </body>
 </html>
